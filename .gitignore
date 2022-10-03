@@ -3,3 +3,4 @@
 /Cargo.lock
 /.env
 /stalker.log
+/*.dat

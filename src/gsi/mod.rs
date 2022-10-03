@@ -33,7 +33,7 @@ impl Server {
 			let _ = tokio::spawn(async move {
 				log::debug!("Task spawned...");
 
-				if let Err(e) = socket.readable().await {
+				if let Err(_e) = socket.readable().await {
 					log::error!("Socket not readable!");
 					return; // TODO: Handle error.
 				};
@@ -46,7 +46,7 @@ impl Server {
 						return;
 					}
 					Ok(n) => n,
-					Err(e) => {
+					Err(_e) => {
 						log::error!("Failed to read from socket!");
 						return; // TODO: Handle error.
 					}
@@ -54,7 +54,7 @@ impl Server {
 
 				log::trace!("Read: {}", n);
 
-				if let Err(e) = socket.write_all(OK.as_bytes()).await {
+				if let Err(_e) = socket.write_all(OK.as_bytes()).await {
 					log::error!("Failed to write to socket!");
 					return; // TODO: Handle error.
 				};
