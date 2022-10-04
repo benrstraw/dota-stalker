@@ -1,45 +1,99 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fs::File;
 use std::sync::Arc;
 use chrono::Utc;
+use rmp_serde::{decode, encode};
 use serenity::builder::CreateEmbed;
 use serenity::CacheAndHttp;
 use serenity::model::channel::Message;
-use serenity::model::id::ChannelId;
-use tokio::sync::mpsc::Receiver;
+use serenity::model::id::{ChannelId, UserId};
+use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use crate::gsi::JsonKV;
-
-const CHANNEL: ChannelId = ChannelId(1024116900940226561);
 
 struct Game {
 	matchid: u64,
 	message: Message,
 }
 
-type SteamID = u64;
+type SteamId = u64;
+
+#[derive(Debug)]
+pub enum BotRequest {
+	BindChannel {
+		channel: ChannelId,
+		resp: oneshot::Sender<Result<(), ()>>
+	}
+}
 
 pub struct Bot {
+	bot_req_rx: mpsc::Receiver<BotRequest>,
+	gsi_rx: mpsc::Receiver<JsonKV>,
 	cah: Arc<CacheAndHttp>,
-	rx: Receiver<JsonKV>,
-	games: HashMap<SteamID, Game>,
+	games: HashMap<SteamId, Game>,
+	channels: HashSet<ChannelId>,
+	users: HashMap<SteamId, UserId>,
+	tracks: HashMap<UserId, HashSet<ChannelId>>,
 }
 
 impl Bot {
-	pub fn new(cah: Arc<CacheAndHttp>, rx: Receiver<JsonKV>) -> Self {
+	pub fn new(cah: Arc<CacheAndHttp>, bot_req_rx: mpsc::Receiver<BotRequest>, gsi_rx: mpsc::Receiver<JsonKV>) -> Self {
+		let channels_file = File::open("channels.dat");
+		let channels = if channels_file.is_ok() {
+			let res = decode::from_read(channels_file.unwrap());
+			if res.is_ok() {
+				res.unwrap()
+			} else {
+				log::error!("Error decoding data from channels.dat! Using an empty list!");
+				HashSet::new()
+			}
+		} else {
+			log::warn!("Could not open channels.dat! (First run?)");
+			HashSet::new()
+		};
+
+		for channel in &channels {
+			log::debug!("Loaded binding to channel {}", channel);
+		}
+
 		return Bot {
+			bot_req_rx,
+			gsi_rx,
 			cah,
-			rx,
 			games: HashMap::new(),
+			channels,
+			users: HashMap::new(),
+			tracks: HashMap::new(),
 		}
 	}
 
 	pub async fn run(mut self) {
 		log::info!("Starting bot handler!");
 
-		while let Some(data) = self.rx.recv().await {
-			self.handle_game_data(data).await;
+		loop {
+			tokio::select! {
+	            Some(data) = self.bot_req_rx.recv() => self.handle_bot_request(data).await,
+	            Some(data) = self.gsi_rx.recv() => self.handle_game_data(data).await,
+	            else => { break }
+	        };
 		}
 
 		log::warn!("Bot handler killed!");
+	}
+
+	pub fn write_data(&mut self) {
+		let channels_file = File::create("channels.dat");
+		encode::write(&mut channels_file.unwrap(), &self.channels).unwrap();
+	}
+
+	pub async fn handle_bot_request(&mut self, data: BotRequest) {
+		match data {
+			BotRequest::BindChannel { channel, resp } => {
+				self.channels.insert(channel);
+				self.write_data();
+				resp.send(Ok(())).unwrap();
+			}
+		};
 	}
 
 	pub async fn handle_game_data(&mut self, data: JsonKV) {
@@ -70,34 +124,34 @@ impl Bot {
 						} else {
 							log::info!("Found an old match for player {} with match ID {}. Updating to new match ID {}.", steamid, self.games.get(&steamid).unwrap().matchid, matchid);
 
-							let message = CHANNEL.send_message(&self.cah.http, |a| {
-								a.embed(|b| {
-									build_message(b, data)
-								})
-							}).await.unwrap();
+							// let message = CHANNEL.send_message(&self.cah.http, |a| {
+							// 	a.embed(|b| {
+							// 		build_message(b, data)
+							// 	})
+							// }).await.unwrap();
 
-							let game = Game {
-								matchid,
-								message,
-							};
+							// let game = Game {
+							// 	matchid,
+							// 	message,
+							// };
 
-							self.games.insert(steamid, game);
+							// self.games.insert(steamid, game);
 						}
 					} else {
 						log::info!("Creating new match for player {} with match ID {}.", steamid, matchid);
 
-						let message = CHANNEL.send_message(&self.cah.http, |a| {
-							a.embed(|b| {
-								build_message(b, data)
-							})
-						}).await.unwrap();
-
-						let game = Game {
-							matchid,
-							message,
-						};
-
-						self.games.insert(steamid, game);
+						// let message = CHANNEL.send_message(&self.cah.http, |a| {
+						// 	a.embed(|b| {
+						// 		build_message(b, data)
+						// 	})
+						// }).await.unwrap();
+						//
+						// let game = Game {
+						// 	matchid,
+						// 	message,
+						// };
+						//
+						// self.games.insert(steamid, game);
 					};
 				}
 			}

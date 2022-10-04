@@ -8,16 +8,13 @@ use serenity::Client;
 use serenity::prelude::GatewayIntents;
 use tokio::sync::mpsc;
 use crate::bot::Bot;
+use crate::discord::{DiscordData, DiscordKey};
 
-mod events;
+mod discord;
 mod gsi;
 mod bot;
 
 const GSI_URI: &str = "127.0.0.1:3682";
-
-// fn echo_handler(gs: GameState) {
-//     println!("{}", gs);
-// }
 
 #[tokio::main]
 async fn main() {
@@ -36,13 +33,19 @@ async fn main() {
     let gsi = gsi::Server::new(GSI_URI);
 
     let mut client = Client::builder(token, GatewayIntents::non_privileged())
-        .event_handler(events::Events)
+        .event_handler(discord::Events)
         .application_id(application_id)
         .await
         .expect("Error creating client");
 
-    let (tx, rx) = mpsc::channel(10);
-    let bot = Bot::new(client.cache_and_http.clone(), rx);
+    let (gsi_tx, gsi_rx) = mpsc::channel(10);
+    let (bot_req_tx, bot_req_rx) = mpsc::channel(10);
+
+    let bot = Bot::new(client.cache_and_http.clone(), bot_req_rx, gsi_rx);
+
+    let disc_data = DiscordData { bot_req_tx };
+
+    client.data.write().await.insert::<DiscordKey>(disc_data);
 
     info!("Initializing Dota Stalker...");
 
@@ -51,7 +54,7 @@ async fn main() {
     });
 
     tokio::spawn(async move {
-        gsi.run(tx).await;
+        gsi.run(gsi_tx).await;
     });
 
     if let Err(why) = client.start().await {
