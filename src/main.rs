@@ -94,7 +94,7 @@ fn setup_logger() {
             ));
         })
         .level(log::LevelFilter::Warn)
-        .level_for("dota_stalker", log::LevelFilter::Trace)
+        .level_for("dota_stalker", log::LevelFilter::Debug)
         .chain(std::io::stdout())
         .chain(fern::log_file("stalker.log").unwrap())
         .apply()

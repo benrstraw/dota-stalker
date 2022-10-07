@@ -9,7 +9,7 @@ use serenity::model::Permissions;
 use serenity::prelude::TypeMapKey;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-use crate::bot::BotRequest;
+use crate::bot::{BotRequest, SteamId};
 
 pub struct Events;
 
@@ -36,7 +36,7 @@ impl EventHandler for Events {
 						.create_option(|option| {
 							option
 								.name("steamid")
-								.description("Steam ID")
+								.description("Your SteamID64, which can be found at steamid.io")
 								.kind(CommandOptionType::String)
 								.required(false)
 						})
@@ -53,6 +53,18 @@ impl EventHandler for Events {
 								.description("Channel to bind the bot to.")
 								.kind(CommandOptionType::Channel)
 								.required(true)
+						})
+				})
+				.create_application_command(|command| {
+					command
+						.name("track")
+						.description("Start tracking your Dota matches in this channel.")
+						.create_option(|option| {
+							option
+								.name("disable")
+								.description("Set this to true to STOP tracking in this channel.")
+								.kind(CommandOptionType::Boolean)
+								.required(false)
 						})
 				})
 		}).await.unwrap();
@@ -72,7 +84,83 @@ impl EventHandler for Events {
 				}
 				Some(_gid) => {
 					match command.data.name.as_str() {
-						"register" => todo!(),
+						"register" => {
+							log::trace!("Received track request from {} in channel {}", command.user.id, command.channel_id);
+
+							let steam_id: Option<SteamId> = match command.data.options.get(0) {
+								None => None,
+								Some(x) => {
+									match &x.value {
+										None => None,
+										Some(x) => {
+											match x.as_str() {
+												None => None,
+												Some(x) => {
+													match x.parse() {
+														Ok(steam_id) => Some(steam_id),
+														Err(_) => None,
+													}
+												}
+											}
+										}
+									}
+								}
+							};
+
+							let steam_id = match steam_id {
+								None => {
+									command.create_interaction_response(&ctx, |f| {
+										f.kind(ChannelMessageWithSource);
+										f.interaction_response_data(|g| {
+											g.content("Invalid SteamID! Make sure to use the SteamID64.");
+											g.flags(MessageFlags::EPHEMERAL)
+										})
+									}).await.unwrap();
+									return;
+								}
+								Some(steam_id) => steam_id,
+							};
+
+							log::trace!("Attempting to register {} with SteamID {}", command.user.id, steam_id);
+
+							let data = ctx.data.read().await;
+							let data = data.get::<DiscordKey>().unwrap();
+							let (tx, rx) = oneshot::channel();
+							let request = BotRequest::RegisterUser {
+								user: command.user.id,
+								steam_id,
+								resp: tx,
+							};
+
+							log::trace!("Sending bot request");
+
+							data.bot_req_tx.send(request).await.unwrap();
+
+							let resp = rx.await.unwrap();
+
+							log::trace!("Received bot response");
+
+							match resp {
+								Ok(resp) => {
+									command.create_interaction_response(&ctx, |f| {
+										f.kind(ChannelMessageWithSource);
+										f.interaction_response_data(|g| {
+											g.content(format!("Auth token: {}", resp));
+											g.flags(MessageFlags::EPHEMERAL)
+										})
+									}).await.unwrap();
+								}
+								Err(_) => {
+									command.create_interaction_response(&ctx, |f| {
+										f.kind(ChannelMessageWithSource);
+										f.interaction_response_data(|g| {
+											g.content("There was an unexpected error!");
+											g.flags(MessageFlags::EPHEMERAL)
+										})
+									}).await.unwrap();
+								}
+							}
+						}
 						"bind" => {
 							log::trace!("Received bind request from {}", command.user.id);
 
@@ -127,6 +215,73 @@ impl EventHandler for Events {
 										f.kind(ChannelMessageWithSource);
 										f.interaction_response_data(|g| {
 											g.content(format!("Error binding to {}!", channel));
+											g.flags(MessageFlags::EPHEMERAL)
+										})
+									}).await.unwrap();
+								}
+							}
+						}
+						"track" => {
+							log::trace!("Received track request from {} in channel {}", command.user.id, command.channel_id);
+
+							let disable = match command.data.options.get(0) {
+								None => false,
+								Some(x) => {
+									match &x.value {
+										None => false,
+										Some(x) => {
+											match x.as_bool() {
+												None => false,
+												Some(x) => {
+													x
+												}
+											}
+										}
+									}
+								}
+							};
+
+							log::trace!("Attempting to add track for {} in {}", command.user.id, command.channel_id);
+
+							let data = ctx.data.read().await;
+							let data = data.get::<DiscordKey>().unwrap();
+							let (tx, rx) = oneshot::channel();
+							let request = if disable {
+								BotRequest::RemoveTrack {
+									user: command.user.id,
+									channel: command.channel_id,
+									resp: tx,
+								}
+							} else {
+								BotRequest::AddTrack {
+									user: command.user.id,
+									channel: command.channel_id,
+									resp: tx,
+								}
+							};
+
+							log::trace!("Sending bot request");
+
+							data.bot_req_tx.send(request).await.unwrap();
+
+							let resp = rx.await.unwrap();
+
+							log::trace!("Received bot response");
+
+							if resp.is_ok() {
+								command.create_interaction_response(&ctx, |f| {
+									f.kind(ChannelMessageWithSource);
+									f.interaction_response_data(|g| {
+										g.content("Success!");
+										g.flags(MessageFlags::EPHEMERAL)
+									})
+								}).await.unwrap();
+							} else {
+								if resp.is_ok() {
+									command.create_interaction_response(&ctx, |f| {
+										f.kind(ChannelMessageWithSource);
+										f.interaction_response_data(|g| {
+											g.content("The bot is not bound to this channel! Please switch to a valid channel.");
 											g.flags(MessageFlags::EPHEMERAL)
 										})
 									}).await.unwrap();

@@ -1,13 +1,10 @@
-use std::collections::HashMap;
 use bytes::BytesMut;
-use serde_json::Value;
+use dota::components::GameState;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
 const OK: &str = "HTTP/1.1 200 OK\ncontent-type: text/html\n";
-
-pub type JsonKV = HashMap<String, Value>;
 
 pub struct Server {
 	uri: String,
@@ -20,18 +17,18 @@ impl Server {
 		}
 	}
 
-	pub async fn run(self, tx: mpsc::Sender<JsonKV>) {
+	pub async fn run(self, tx: mpsc::Sender<GameState>) {
 		log::info!("Listening on {}", self.uri);
 
 		let listener = TcpListener::bind(self.uri).await.unwrap(); // TODO: Handle.
 
 		loop {
 			let (mut socket, addr) = listener.accept().await.unwrap(); // TODO: Handle.
-			log::info!("Accepted: {}", addr);
+			log::trace!("Accepted: {}", addr);
 			let txi = tx.clone();
 
 			let _ = tokio::spawn(async move {
-				log::debug!("Task spawned...");
+				log::trace!("Task spawned...");
 
 				if let Err(_e) = socket.readable().await {
 					log::error!("Socket not readable!");
@@ -70,10 +67,9 @@ impl Server {
 				let _ = buf.split_to(amt);
 				log::trace!("Raw data: {:?}", buf);
 
-				let game_data: JsonKV = serde_json::from_slice(&buf).expect("Failed to parse JSON body!");
-				log::trace!("Parsed: {:?}", game_data);
+				let game_state: GameState = serde_json::from_slice(&buf).expect("Failed to parse JSON body!");
 
-				txi.send(game_data).await.unwrap();
+				txi.send(game_state).await.unwrap();
 			})
 				.await.unwrap(); // TODO: Handle.
 		}
