@@ -210,15 +210,13 @@ impl EventHandler for Events {
 									})
 								}).await.unwrap();
 							} else {
-								if resp.is_ok() {
-									command.create_interaction_response(&ctx, |f| {
-										f.kind(ChannelMessageWithSource);
-										f.interaction_response_data(|g| {
-											g.content(format!("Error binding to {}!", channel));
-											g.flags(MessageFlags::EPHEMERAL)
-										})
-									}).await.unwrap();
-								}
+								command.create_interaction_response(&ctx, |f| {
+									f.kind(ChannelMessageWithSource);
+									f.interaction_response_data(|g| {
+										g.content(format!("Error binding to {}!", channel));
+										g.flags(MessageFlags::EPHEMERAL)
+									})
+								}).await.unwrap();
 							}
 						}
 						"track" => {
@@ -277,15 +275,13 @@ impl EventHandler for Events {
 									})
 								}).await.unwrap();
 							} else {
-								if resp.is_ok() {
-									command.create_interaction_response(&ctx, |f| {
-										f.kind(ChannelMessageWithSource);
-										f.interaction_response_data(|g| {
-											g.content("The bot is not bound to this channel! Please switch to a valid channel.");
-											g.flags(MessageFlags::EPHEMERAL)
-										})
-									}).await.unwrap();
-								}
+								command.create_interaction_response(&ctx, |f| {
+									f.kind(ChannelMessageWithSource);
+									f.interaction_response_data(|g| {
+										g.content("The bot is not bound to this channel! Please switch to a valid channel.");
+										g.flags(MessageFlags::EPHEMERAL)
+									})
+								}).await.unwrap();
 							}
 						}
 						_ => unreachable!(),
