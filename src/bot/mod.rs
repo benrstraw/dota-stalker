@@ -7,6 +7,7 @@ use dota::components::{DotaGameRulesState, GameState, Map};
 use dota::components::heroes::{GameHeroes, Hero};
 use dota::components::players::{GamePlayers, PlayerInformation};
 use rmp_serde::{decode, encode};
+use rmp_serde::decode::Error;
 use rusty_ulid::Ulid;
 use serenity::builder::CreateEmbed;
 use serenity::CacheAndHttp;
@@ -89,10 +90,10 @@ pub struct Bot {
 impl Bot {
 	pub fn new(cah: Arc<CacheAndHttp>, bot_req_rx: mpsc::Receiver<BotRequest>, gsi_rx: mpsc::Receiver<GameState>) -> Self {
 		let data_file = File::open("stalker.dat");
-		let save = if data_file.is_ok() {
-			let res = decode::from_read(data_file.unwrap());
-			if res.is_ok() {
-				res.unwrap()
+
+		let save = if let Ok(save) = data_file {
+			if let Ok(res) = decode::from_read(save) as Result<SaveData, Error> {
+				res
 			} else {
 				log::error!("Error decoding data from stalker.dat! Using an empty dataset!");
 				SaveData::new()
@@ -114,7 +115,7 @@ impl Bot {
 			log::debug!("Loaded tracks for user {}: {:#?}", track.0, track.1);
 		}
 
-		return Bot {
+		Bot {
 			bot_req_rx,
 			gsi_rx,
 			cah,
@@ -131,7 +132,7 @@ impl Bot {
 	            Some(data) = self.bot_req_rx.recv() => self.handle_bot_request(data).await,
 	            Some(data) = self.gsi_rx.recv() => self.handle_game_state(data).await,
 	            else => { break }
-	        };
+	        }
 		}
 
 		log::warn!("Bot handler killed!");
@@ -180,7 +181,7 @@ impl Bot {
 						}
 					}
 				}
-				resp.send(Ok(())).unwrap();
+				resp.send( Ok(())).unwrap();
 			}
 			BotRequest::RegisterUser { user, steam_id, resp } => {
 				let user_info = UserInfo {
@@ -256,7 +257,7 @@ impl Bot {
 		};
 
 		match self.save.users.get(&user_info) {
-			None => return,
+			None => (),
 			Some(user_id) => {
 				let match_id = match map.match_id.parse() {
 					Ok(match_id) => match_id,
@@ -271,7 +272,7 @@ impl Bot {
 					hero,
 					match_id,
 					user_info,
-					user_id: user_id.clone(),
+					user_id: *user_id,
 				};
 
 				let game = self.games.get_mut(&steam_id);
@@ -304,7 +305,6 @@ impl Bot {
 			None => {
 				log::trace!("User {:?} has no tracked channels", game_data.user_info);
 				self.games.remove(&game_data.user_info.steam_id);
-				return;
 			}
 			Some(tracks) => {
 				let mut messages = Vec::new();
@@ -373,5 +373,5 @@ fn build_message<'a, 'b>(e: &'a mut CreateEmbed, data: &'b GameData) -> &'a mut 
 
 	e.timestamp(Utc::now());
 
-	return e;
+	e
 }

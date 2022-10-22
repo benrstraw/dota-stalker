@@ -27,7 +27,7 @@ impl Server {
 			log::trace!("Accepted: {}", addr);
 			let txi = tx.clone();
 
-			let _ = tokio::spawn(async move {
+			tokio::spawn(async move {
 				log::trace!("Task spawned...");
 
 				if let Err(_e) = socket.readable().await {
